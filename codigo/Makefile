@@ -1,5 +1,5 @@
 DIRNAME = ep1-lucas_paiolla
-EPOBJS = ep1.o
+EPOBJS = ep1.o util.o headers.o
 CFLAGS = -Wall -g -pedantic -Wno-unused-result
 COMPILER = gcc
 
@@ -37,4 +37,4 @@ tar:
 
 
 clean:
-	rm *.o ep1 *~
+	rm *.o ep1

@@ -1,32 +1,3 @@
-/* Por Prof. Daniel Batista <batista@ime.usp.br>
- * Em 4/4/2021
- *
- * Um código simples de um servidor de eco a ser usado como base para
- * o EP1. Ele recebe uma linha de um cliente e devolve a mesma linha.
- * Teste ele assim depois de compilar:
- *
- * ./ep1-servidor-exemplo 8000
- *
- * Com este comando o servidor ficará escutando por conexões na porta
- * 8000 TCP (Se você quiser fazer o servidor escutar em uma porta
- * menor que 1024 você precisará ser root ou ter as permissões
- * necessárias para rodar o código com 'sudo').
- *
- * Depois conecte no servidor via telnet. Rode em outro terminal:
- *
- * telnet 127.0.0.1 8000
- *
- * Escreva sequências de caracteres seguidas de ENTER. Você verá que o
- * telnet exibe a mesma linha em seguida. Esta repetição da linha é
- * enviada pelo servidor. O servidor também exibe no terminal onde ele
- * estiver rodando as linhas enviadas pelos clientes.
- *
- * Obs.: Você pode conectar no servidor remotamente também. Basta
- * saber o endereço IP remoto da máquina onde o servidor está rodando
- * e não pode haver nenhum firewall no meio do caminho bloqueando
- * conexões na porta escolhida.
- */
-
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <errno.h>
@@ -40,55 +11,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "headers.h"
+#include "util.h"
+
 #define LISTENQ 1
 #define MAXDATASIZE 100
 #define MAXLINE 4096
-
-enum PackageType {
-    CONNECT_PACKAGE = 0x1,
-    CONNACK_PACKAGE = 0x2,
-    PUBLISH_PACKAGE = 0x3,
-    PUBACK_PACKAGE = 0x4,
-    PUBREC_PACKAGE = 0x5,
-    PUBREL_PACKAGE = 0x6,
-    PUBCOMP_PACKAGE = 0x7,
-    SUBSCRIBE_PACKAGE = 0x8,
-    SUBACK_PACKAGE = 0x9,
-    UNSUBSCRIBE_PACKAGE = 0xa,
-    UNSUBACK_PACKAGE = 0xb,
-    PINGREQ_PACKAGE = 0xc,
-    PINGRESP_PACKAGE = 0xd,
-    DISCONNECT_PACKAGE = 0xe
-};
-
-typedef struct {
-    u_int8_t type_flags;
-    u_int8_t remaning_length;
-} FixedHeader;
-
-typedef struct {
-    u_int16_t protocol_name_len; // 0x00 0x04
-    unsigned char name[4]; // 'MQTT'
-    u_int8_t version; // 0x05
-    u_int8_t flags; // 0x02 (ignored)
-    u_int16_t keep_alive;
-    u_int8_t property_length;
-    u_int8_t receive_maximum_id;
-    u_int16_t receive_maximum_value;
-} ConnectVarHeader;
-
-typedef struct {
-    u_int8_t ack_flags;
-    u_int8_t reason_code;
-    u_int8_t property_length;
-    u_int8_t topic_alias_maximum_id;
-    u_int16_t topic_alias_maximum_value;
-    u_int8_t assigned_client_id;
-    u_int16_t client_id_len;
-    u_int8_t *client_id;
-    u_int8_t receive_maximum_id;
-    u_int16_t receive_maximum_value;
-} ConnackVarHeader;
 
 int main(int argc, char **argv) {
     /* Os sockets. Um que será o socket que vai escutar pelas conexões
@@ -206,51 +134,28 @@ int main(int argc, char **argv) {
                 printf("[Cliente conectado no processo filho %d enviou:] \n'",
                        getpid());
                 fflush(stdout);
-                for (int i = 0; i < n; ++i) fprintf(stdout, "%02x ", recvline[i]);
+                for (int i = 0; i < n; ++i)
+                    fprintf(stdout, "%02x ", recvline[i]);
                 fprintf(stdout, "'\n");
 
-                FixedHeader *package_header = malloc(sizeof(FixedHeader));
-                memcpy(package_header, recvline, sizeof(*package_header));
+                int index = 0;
+                FixedHeader *fixed_header;
+                fixed_header = interpret_fixed_header(recvline, &index);
 
-
-                fprintf(stdout, "\nType_flags : %02x\nRemaning length: %02x\n",
-                        package_header->type_flags, package_header->remaning_length);
-                u_int8_t type = package_header->type_flags >> 4;
-                u_int8_t flags = package_header->type_flags & 0x0F;
-                fprintf(stdout, "type: %01x flags: %01x\n", type, flags);
-
-
-
-                switch (type) {
+                switch (fixed_header->type) {
                     case CONNECT_PACKAGE:
                         fprintf(stdout, "Connect case\n");
 
-                        ConnectVarHeader *con_header = malloc(sizeof(ConnectVarHeader));
-                        memcpy(con_header, &recvline[2], sizeof(*con_header));
-                        con_header->protocol_name_len = ntohs(con_header->protocol_name_len);
-                        con_header->keep_alive = ntohs(con_header->keep_alive);
-                        con_header->receive_maximum_value = ntohs(con_header->receive_maximum_value);
-
-                        FixedHeader *fixed_header = malloc(sizeof(FixedHeader));
-                        fixed_header->type_flags = 0x02;
-                        fixed_header->remaning_length = 2;
+                        FixedHeader *ret_fixed_header = malloc(sizeof(FixedHeader));
+                        ret_fixed_header->type = CONNACK_PACKAGE;
 
                         ConnackVarHeader *connack_header = malloc(sizeof(ConnackVarHeader));
-                        connack_header->ack_flags = 0x00;
-                        connack_header->reason_code = 0x00;
-                        connack_header->property_length = 2;
-                        connack_header->topic_alias_maximum_id = 0x22;
-                        connack_header->topic_alias_maximum_value = 0x000a;
-                        connack_header->assigned_client_id = 0x12;
-                        connack_header->client_id_len = 2;
-                        /* connack_header->client_id = */
+                        connack_header->ack_flags = 0;
+                        connack_header->reason_code = 0;
+                        connack_header->topic_alias_maximum_value = 10;
+                        connack_header->client_id = childpid;
 
-                        fprintf(stdout, "pid: %d\n", getpid());
-
-
-                        /* char conn_ack[4] = { 0x20, 0x02, 0x00, 0x00 }; */
                         /* write(connfd, conn_ack, 4); */
-
 
                         break;
                     case CONNACK_PACKAGE:
@@ -292,9 +197,9 @@ int main(int argc, char **argv) {
                     case DISCONNECT_PACKAGE:
                         fprintf(stdout, "Disconnect case\n");
                         break;
-
-                        memset(recvline, 0, MAXLINE);
                 }
+
+                free(fixed_header);
             }
             /* ========================================================= */
             /* ========================================================= */
