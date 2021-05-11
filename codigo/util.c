@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-u_int64_t read_var_byte_integer(string buffer, int *start_idx) {
+u_int64_t read_var_byte_integer(ustring buffer, int *start_idx) {
     u_int64_t multiplier = 1;
     u_int64_t value = 0;
     u_int8_t encoded_byte;

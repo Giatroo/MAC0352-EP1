@@ -24,20 +24,29 @@ enum PackageType {
 
 typedef struct {
     enum PackageType type;
-    var_byte remaning_length;
+    u_int64_t remaning_length;
 } FixedHeader;
 
 typedef struct {
     u_int8_t ack_flags;
     u_int8_t reason_code;
-    var_byte property_length;
+    u_int64_t property_length;
     u_int16_t topic_alias_maximum_value;
     u_int16_t client_id_len;
-    byte *client_id;
+    char client_id[10];
     u_int16_t receive_maximum_value;
 } ConnackVarHeader;
 
-FixedHeader *interpret_fixed_header(string recvline, int *start_idx);
-byte *encode_connack(ConnackVarHeader *connack_header);
+typedef struct {
+    u_int16_t msg_id;
+    u_int64_t prop_len;
+    u_int16_t topic_len;
+    string topic_value;
+    u_int8_t sub_options;
+} SubscribeHeader;
+
+FixedHeader *interpret_fixed_header(ustring recvline, int *start_idx);
+byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len);
+SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx, int remaning_length);
 
 #endif /* ifndef HEADERS_H */

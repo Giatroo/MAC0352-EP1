@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
      * quem é o processo pai */
     pid_t childpid;
     /* Armazena linhas recebidas do cliente */
-    char recvline[MAXLINE + 1];
+    unsigned char recvline[MAXLINE + 1];
     /* Armazena o tamanho da string lida do cliente */
     ssize_t n;
 
@@ -148,15 +148,16 @@ int main(int argc, char **argv) {
 
                         ConnackVarHeader *connack_header =
                             malloc(sizeof(ConnackVarHeader));
-                        connack_header->ack_flags = 0;
-                        connack_header->reason_code = 0;
+                        connack_header->ack_flags = 0x00;
+                        connack_header->reason_code = 0x00;
                         connack_header->topic_alias_maximum_value = 10;
-                        connack_header->client_id = write_var_byte_integer(
-                            getpid(), &connack_header->client_id_len);
+                        sprintf(connack_header->client_id, "%d", getpid());
+                        connack_header->client_id_len = strlen(connack_header->client_id);
 
-                        byte *encoded_str = encode_connack(connack_header);
+                        int encoded_len;
+                        byte *encoded_str = encode_connack(connack_header, &encoded_len);
 
-                        write(connfd, encoded_str, 17);
+                        write(connfd, encoded_str, encoded_len);
 
                         break;
                     case CONNACK_PACKAGE:
@@ -179,6 +180,22 @@ int main(int argc, char **argv) {
                         break;
                     case SUBSCRIBE_PACKAGE:
                         fprintf(stdout, "Subscribe case\n");
+
+                        fprintf(stdout, "remaning_length: %lu\n", fixed_header->remaning_length);
+
+                        SubscribeHeader *sub_header;
+                        sub_header = interpret_subscribe_header(recvline, &index, fixed_header->remaning_length);
+
+                        byte suback_package[6];
+                        suback_package[0] = 0x90;
+                        suback_package[1] = 0x04;
+                        suback_package[2] = 0x00;
+                        suback_package[3] = 0x01;
+                        suback_package[4] = 0x00;
+                        suback_package[5] = 0x00;
+
+                        write(connfd, suback_package, 6);
+
                         break;
                     case SUBACK_PACKAGE:
                         fprintf(stdout, "Suback case\n");
