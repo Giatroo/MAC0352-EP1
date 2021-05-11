@@ -2,6 +2,7 @@
 #define HEADERS_H
 
 #include <sys/types.h>
+
 #include "util.h"
 
 enum PackageType {
@@ -32,10 +33,11 @@ typedef struct {
     var_byte property_length;
     u_int16_t topic_alias_maximum_value;
     u_int16_t client_id_len;
-    u_int64_t client_id;
+    byte *client_id;
     u_int16_t receive_maximum_value;
 } ConnackVarHeader;
 
 FixedHeader *interpret_fixed_header(string recvline, int *start_idx);
+byte *encode_connack(ConnackVarHeader *connack_header);
 
 #endif /* ifndef HEADERS_H */

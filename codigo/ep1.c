@@ -146,16 +146,17 @@ int main(int argc, char **argv) {
                     case CONNECT_PACKAGE:
                         fprintf(stdout, "Connect case\n");
 
-                        FixedHeader *ret_fixed_header = malloc(sizeof(FixedHeader));
-                        ret_fixed_header->type = CONNACK_PACKAGE;
-
-                        ConnackVarHeader *connack_header = malloc(sizeof(ConnackVarHeader));
+                        ConnackVarHeader *connack_header =
+                            malloc(sizeof(ConnackVarHeader));
                         connack_header->ack_flags = 0;
                         connack_header->reason_code = 0;
                         connack_header->topic_alias_maximum_value = 10;
-                        connack_header->client_id = childpid;
+                        connack_header->client_id = write_var_byte_integer(
+                            getpid(), &connack_header->client_id_len);
 
-                        /* write(connfd, conn_ack, 4); */
+                        byte *encoded_str = encode_connack(connack_header);
+
+                        write(connfd, encoded_str, 17);
 
                         break;
                     case CONNACK_PACKAGE:
