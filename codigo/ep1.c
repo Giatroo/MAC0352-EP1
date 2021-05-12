@@ -13,6 +13,7 @@
 
 #include "headers.h"
 #include "util.h"
+#include "topics.h"
 
 #define LISTENQ 1
 #define MAXDATASIZE 100
@@ -128,6 +129,7 @@ int main(int argc, char **argv) {
             /* ========================================================= */
             /* TODO: É esta parte do código que terá que ser modificada
              * para que este servidor consiga interpretar comandos MQTT  */
+            inicialize_topics();
             while ((n = read(connfd, recvline, MAXLINE)) > 0) {
                 recvline[n] = 0;
 
@@ -165,6 +167,17 @@ int main(int argc, char **argv) {
                         break;
                     case PUBLISH_PACKAGE:
                         fprintf(stdout, "Publish case\n");
+
+                        PublishHeader *pub_header;
+                        pub_header = interpret_publish_header(recvline, &index, fixed_header->remaning_length);
+
+                        fprintf(stdout, "topic_len: %d\n", pub_header->topic_len);
+                        fprintf(stdout, "topic: %s\n", pub_header->topic_value);
+                        fprintf(stdout, "prop_len: %lu\n", pub_header->prop_len);
+                        fprintf(stdout, "msg_len: %lu\n", pub_header->msg_len);
+                        fprintf(stdout, "msg: %s\n", pub_header->msg);
+                        fprintf(stdout, "\n");
+
                         break;
                     case PUBACK_PACKAGE:
                         fprintf(stdout, "Pubback case\n");
@@ -181,10 +194,11 @@ int main(int argc, char **argv) {
                     case SUBSCRIBE_PACKAGE:
                         fprintf(stdout, "Subscribe case\n");
 
-                        fprintf(stdout, "remaning_length: %lu\n", fixed_header->remaning_length);
-
                         SubscribeHeader *sub_header;
                         sub_header = interpret_subscribe_header(recvline, &index, fixed_header->remaning_length);
+
+                        add_client_to_topic(sub_header->topic_value);
+                        print_topics();
 
                         byte suback_package[6];
                         suback_package[0] = 0x90;

@@ -1,5 +1,5 @@
 DIRNAME = ep1-lucas_paiolla
-EPOBJS = ep1.o util.o headers.o
+EPOBJS = ep1.o util.o headers.o topics.o
 CFLAGS = -Wall -g -pedantic -Wno-unused-result
 COMPILER = gcc
 

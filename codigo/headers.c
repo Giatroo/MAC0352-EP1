@@ -59,8 +59,7 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
     /* the properties length */
     encoded_str[i++] = connack_header->property_length;
     fprintf(stdout, "property_length: %ld\n", connack_header->property_length);
-    fprintf(stdout, "encoded_prop_len: %02x\n", encoded_str[i-1]);
-
+    fprintf(stdout, "encoded_prop_len: %02x\n", encoded_str[i - 1]);
 
     /* now we write the topic alias maximum id */
     encoded_str[i++] = 0x22;
@@ -77,7 +76,6 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
     for (int j = 0; j < connack_header->client_id_len; j++)
         encoded_str[i++] = connack_header->client_id[j];
 
-
     fprintf(stdout, "encoded: '");
     for (int j = 0; j < i; j++) { fprintf(stdout, "%02x ", encoded_str[j]); }
     fprintf(stdout, "'\n");
@@ -86,19 +84,21 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
     return encoded_str;
 }
 
-SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx, int remaning_length) {
+SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx,
+                                            int remaning_length) {
     SubscribeHeader *sub_header = malloc(sizeof(SubscribeHeader));
-
     int i = *start_idx;
-    sub_header->msg_id = (1 << 8) * recvline[i] + recvline[i+1];
+
+    sub_header->msg_id = (1 << 8) * recvline[i] + recvline[i + 1];
     i += 2;
 
     sub_header->prop_len = read_var_byte_integer(recvline, &i);
 
-    sub_header->topic_len = (1 << 8) * recvline[i] + recvline[i+1];
+    sub_header->topic_len = (1 << 8) * recvline[i] + recvline[i + 1];
     i += 2;
 
-    sub_header->topic_value = malloc((sub_header->topic_len + 1) * sizeof(char));
+    sub_header->topic_value =
+        malloc((sub_header->topic_len + 1) * sizeof(char));
     memcpy(sub_header->topic_value, &recvline[i], sub_header->topic_len);
     sub_header->topic_value[sub_header->topic_len] = 0;
     i += sub_header->topic_len;
@@ -106,4 +106,32 @@ SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx, in
     sub_header->sub_options = recvline[i++];
 
     return sub_header;
+}
+
+PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
+                                        int remaning_length) {
+    PublishHeader *pub_header = malloc(sizeof(PublishHeader));
+    int i = *start_idx;
+
+    pub_header->topic_len = (1 << 8) * recvline[i] + recvline[i + 1];
+    i += 2;
+
+    pub_header->topic_value =
+        malloc((pub_header->topic_len + 1) * sizeof(char));
+    memcpy(pub_header->topic_value, &recvline[i], pub_header->topic_len);
+    pub_header->topic_value[pub_header->topic_len] = 0;
+    i += pub_header->topic_len;
+
+    pub_header->prop_len = read_var_byte_integer(recvline, &i);
+
+    remaning_length -= (i - *start_idx);
+    pub_header->msg_len = remaning_length;
+
+    pub_header->msg =
+        malloc((pub_header->msg_len + 1) * sizeof(char));
+    memcpy(pub_header->msg, &recvline[i], pub_header->msg_len);
+    pub_header->msg[pub_header->msg_len] = 0;
+    i += pub_header->msg_len;
+
+    return pub_header;
 }
