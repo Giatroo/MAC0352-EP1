@@ -58,8 +58,6 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
 
     /* the properties length */
     encoded_str[i++] = connack_header->property_length;
-    fprintf(stdout, "property_length: %ld\n", connack_header->property_length);
-    fprintf(stdout, "encoded_prop_len: %02x\n", encoded_str[i - 1]);
 
     /* now we write the topic alias maximum id */
     encoded_str[i++] = 0x22;
@@ -109,7 +107,7 @@ SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx,
 }
 
 PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
-                                        int remaning_length) {
+                                        int remaning_length, int n) {
     PublishHeader *pub_header = malloc(sizeof(PublishHeader));
     int i = *start_idx;
 
@@ -127,11 +125,14 @@ PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
     remaning_length -= (i - *start_idx);
     pub_header->msg_len = remaning_length;
 
-    pub_header->msg =
-        malloc((pub_header->msg_len + 1) * sizeof(char));
+    pub_header->msg = malloc((pub_header->msg_len + 1) * sizeof(char));
     memcpy(pub_header->msg, &recvline[i], pub_header->msg_len);
     pub_header->msg[pub_header->msg_len] = 0;
     i += pub_header->msg_len;
+
+    pub_header->recvline_len = n;
+    pub_header->recvline = malloc(n * sizeof(unsigned char));
+    memcpy(pub_header->recvline, recvline, n);
 
     return pub_header;
 }

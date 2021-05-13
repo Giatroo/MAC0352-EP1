@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,8 +13,8 @@
 #include <unistd.h>
 
 #include "headers.h"
-#include "util.h"
 #include "topics.h"
+#include "util.h"
 
 #define LISTENQ 1
 #define MAXDATASIZE 100
@@ -81,6 +82,8 @@ int main(int argc, char **argv) {
     printf("[Servidor no ar. Aguardando conexões na porta %s]\n", argv[1]);
     printf("[Para finalizar, pressione CTRL+c ou rode um kill ou killall]\n");
 
+    inicialize_topics();
+
     /* O servidor no final das contas é um loop infinito de espera por
      * conexões e processamento de cada uma individualmente */
     for (;;) {
@@ -108,7 +111,7 @@ int main(int argc, char **argv) {
          * processo filho. */
         if ((childpid = fork()) == 0) {
             /**** PROCESSO FILHO ****/
-            printf("[Uma conexão aberta]\n");
+            fprintf(stdout, "[Uma conexão aberta (PID = %d)]\n", getpid());
             /* Já que está no processo filho, não precisa mais do socket
              * listenfd. Só o processo pai precisa deste socket. */
             close(listenfd);
@@ -129,7 +132,6 @@ int main(int argc, char **argv) {
             /* ========================================================= */
             /* TODO: É esta parte do código que terá que ser modificada
              * para que este servidor consiga interpretar comandos MQTT  */
-            inicialize_topics();
             while ((n = read(connfd, recvline, MAXLINE)) > 0) {
                 recvline[n] = 0;
 
@@ -138,7 +140,7 @@ int main(int argc, char **argv) {
                 fflush(stdout);
                 for (int i = 0; i < n; ++i)
                     fprintf(stdout, "%02x ", recvline[i]);
-                fprintf(stdout, "'\n");
+                fprintf(stdout, "'\n\n");
 
                 int index = 0;
                 FixedHeader *fixed_header;
@@ -154,10 +156,12 @@ int main(int argc, char **argv) {
                         connack_header->reason_code = 0x00;
                         connack_header->topic_alias_maximum_value = 10;
                         sprintf(connack_header->client_id, "%d", getpid());
-                        connack_header->client_id_len = strlen(connack_header->client_id);
+                        connack_header->client_id_len =
+                            strlen(connack_header->client_id);
 
                         int encoded_len;
-                        byte *encoded_str = encode_connack(connack_header, &encoded_len);
+                        byte *encoded_str =
+                            encode_connack(connack_header, &encoded_len);
 
                         write(connfd, encoded_str, encoded_len);
 
@@ -169,14 +173,25 @@ int main(int argc, char **argv) {
                         fprintf(stdout, "Publish case\n");
 
                         PublishHeader *pub_header;
-                        pub_header = interpret_publish_header(recvline, &index, fixed_header->remaning_length);
+                        pub_header = interpret_publish_header(
+                            recvline, &index, fixed_header->remaning_length, n);
 
-                        fprintf(stdout, "topic_len: %d\n", pub_header->topic_len);
+                        fprintf(stdout, "topic_len: %d\n",
+                                pub_header->topic_len);
                         fprintf(stdout, "topic: %s\n", pub_header->topic_value);
-                        fprintf(stdout, "prop_len: %lu\n", pub_header->prop_len);
+                        fprintf(stdout, "prop_len: %lu\n",
+                                pub_header->prop_len);
                         fprintf(stdout, "msg_len: %lu\n", pub_header->msg_len);
                         fprintf(stdout, "msg: %s\n", pub_header->msg);
-                        fprintf(stdout, "\n");
+                        fprintf(stdout, "recvline: ");
+                        for (int i = 0; i < n; i++) {
+                            fprintf(stdout, "%02x ", pub_header->recvline[i]);
+                        }
+                        fprintf(stdout, "\n\n");
+
+                        send_msg_to_topic(pub_header->recvline,
+                                          pub_header->recvline_len,
+                                          pub_header->topic_value);
 
                         break;
                     case PUBACK_PACKAGE:
@@ -195,10 +210,18 @@ int main(int argc, char **argv) {
                         fprintf(stdout, "Subscribe case\n");
 
                         SubscribeHeader *sub_header;
-                        sub_header = interpret_subscribe_header(recvline, &index, fixed_header->remaning_length);
+                        sub_header = interpret_subscribe_header(
+                            recvline, &index, fixed_header->remaning_length);
 
-                        add_client_to_topic(sub_header->topic_value);
-                        print_topics();
+                        int topic_idx;
+                        topic_idx =
+                            add_client_to_topic(sub_header->topic_value);
+                        print_clients_in_topics();
+
+                        if (topic_idx == -1) {
+                            // no space for new topic
+                            exit(1);
+                        }
 
                         byte suback_package[6];
                         suback_package[0] = 0x90;
@@ -209,6 +232,17 @@ int main(int argc, char **argv) {
                         suback_package[5] = 0x00;
 
                         write(connfd, suback_package, 6);
+
+                        while (1) {
+                            if (process_comusumed[getpid()] == 0) {
+                                // fprintf(stdout, "%s\n",
+                                // topic_msg[topic_idx]);
+                                write(connfd, topic_msg[topic_idx],
+                                      topic_len[topic_idx]);
+                                process_comusumed[getpid()] = 1;
+                            }
+                            sleep(1);
+                        }
 
                         break;
                     case SUBACK_PACKAGE:
@@ -250,5 +284,7 @@ int main(int argc, char **argv) {
              * pelo processo filho) */
             close(connfd);
     }
+
+    free_topics();
     exit(0);
 }

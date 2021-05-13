@@ -51,11 +51,15 @@ typedef struct {
     u_int64_t prop_len;
     u_int64_t msg_len;
     string msg;
+    int recvline_len;
+    ustring recvline;
 } PublishHeader;
 
 FixedHeader *interpret_fixed_header(ustring recvline, int *start_idx);
 byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len);
-SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx, int remaning_length);
-PublishHeader *interpret_publish_header(ustring recvline, int *start_idx, int remaning_length);
+SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx,
+                                            int remaning_length);
+PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
+                                        int remaning_length, int n);
 
 #endif /* ifndef HEADERS_H */
