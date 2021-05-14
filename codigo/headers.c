@@ -3,27 +3,20 @@
 #include <stdio.h>
 #include <unistd.h>
 
-FixedHeader *interpret_fixed_header(ustring recvline, int *start_idx) {
-    byte type_flags;
-    byte type;
-    u_int64_t remaning_length;
+FixedHeader *interpret_fixed_header(ustring recvline) {
     FixedHeader *header;
-
     header = malloc(sizeof(FixedHeader));
-
-    type_flags = recvline[(*start_idx)++];
-    type = type_flags >> 4;
-
-    header->type = type;
-
-    remaning_length = read_var_byte_integer(recvline, start_idx);
-    header->remaning_length = remaning_length;
+    header->type = recvline[0] >> 4;
+    header->remaning_length = recvline[1];
     return header;
 }
 
-byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
+byte *encode_connack(int *encoded_len) {
     byte *encoded_str;
     int i = 0;
+    char client_id[10];
+
+    sprintf(client_id, "%d", getpid());
 
     /* first let's calculate the lengths of some properties */
 
@@ -33,31 +26,25 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
     remaning_length += 1; // prop length  (hardcoding 1 byte)
     remaning_length += 3; // topic_alias_maximum (id and value)
     remaning_length += 3; // Assigned Client ID (id and length)
-    remaning_length += connack_header->client_id_len;
-
-    connack_header->property_length = remaning_length - 3;
-
-    FixedHeader *fixed_header = malloc(sizeof(FixedHeader));
-    fixed_header->type = CONNACK_PACKAGE << 4;
-    fixed_header->remaning_length = remaning_length;
+    remaning_length += strlen(client_id);
 
     /* now let's create the encoded string */
-    encoded_str = malloc((1 + remaning_length) * sizeof(byte));
+    encoded_str = malloc((2 + remaning_length) * sizeof(byte));
 
     /* the first byte is the type and flags */
-    encoded_str[i++] = fixed_header->type;
+    encoded_str[i++] = CONNACK_PACKAGE << 4;
 
-    /* the next bytes are the bytes for the remaning length */
-    encoded_str[i++] = fixed_header->remaning_length;
+    /* the next byte is the byte for the remaning length */
+    encoded_str[i++] = remaning_length;
 
     /* before the fixed header, we have the acknowledge flags */
-    encoded_str[i++] = connack_header->ack_flags;
+    encoded_str[i++] = 0x00;
 
     /* the reason code */
-    encoded_str[i++] = connack_header->reason_code;
+    encoded_str[i++] = 0x00;
 
     /* the properties length */
-    encoded_str[i++] = connack_header->property_length;
+    encoded_str[i++] = remaning_length - 3;
 
     /* now we write the topic alias maximum id */
     encoded_str[i++] = 0x22;
@@ -69,28 +56,27 @@ byte *encode_connack(ConnackVarHeader *connack_header, int *encoded_len) {
     encoded_str[i++] = 0x12;
     /* the length: */
     encoded_str[i++] = 0x00;
-    encoded_str[i++] = connack_header->client_id_len;
+    encoded_str[i++] = strlen(client_id);
     /* and the id */
-    for (int j = 0; j < connack_header->client_id_len; j++)
-        encoded_str[i++] = connack_header->client_id[j];
-
-    fprintf(stdout, "encoded: '");
-    for (int j = 0; j < i; j++) { fprintf(stdout, "%02x ", encoded_str[j]); }
-    fprintf(stdout, "'\n");
+    for (int j = 0; j < strlen(client_id); j++) encoded_str[i++] = client_id[j];
 
     *encoded_len = i;
+
+    fprintf(stdout, "encoded_str: ");
+    print_in_hex(encoded_str, *encoded_len);
+
     return encoded_str;
 }
 
-SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx,
+SubscribeHeader *interpret_subscribe_header(ustring recvline,
                                             int remaning_length) {
     SubscribeHeader *sub_header = malloc(sizeof(SubscribeHeader));
-    int i = *start_idx;
+    int i = 2;
 
     sub_header->msg_id = (1 << 8) * recvline[i] + recvline[i + 1];
     i += 2;
 
-    sub_header->prop_len = read_var_byte_integer(recvline, &i);
+    sub_header->prop_len = recvline[i++];
 
     sub_header->topic_len = (1 << 8) * recvline[i] + recvline[i + 1];
     i += 2;
@@ -106,10 +92,10 @@ SubscribeHeader *interpret_subscribe_header(ustring recvline, int *start_idx,
     return sub_header;
 }
 
-PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
+PublishHeader *interpret_publish_header(ustring recvline,
                                         int remaning_length, int n) {
     PublishHeader *pub_header = malloc(sizeof(PublishHeader));
-    int i = *start_idx;
+    int i = 2;
 
     pub_header->topic_len = (1 << 8) * recvline[i] + recvline[i + 1];
     i += 2;
@@ -120,19 +106,21 @@ PublishHeader *interpret_publish_header(ustring recvline, int *start_idx,
     pub_header->topic_value[pub_header->topic_len] = 0;
     i += pub_header->topic_len;
 
-    pub_header->prop_len = read_var_byte_integer(recvline, &i);
+    pub_header->prop_len = recvline[i++];
 
-    remaning_length -= (i - *start_idx);
-    pub_header->msg_len = remaning_length;
+    pub_header->msg_len = remaning_length - (i-2);
 
     pub_header->msg = malloc((pub_header->msg_len + 1) * sizeof(char));
     memcpy(pub_header->msg, &recvline[i], pub_header->msg_len);
     pub_header->msg[pub_header->msg_len] = 0;
     i += pub_header->msg_len;
 
-    pub_header->recvline_len = n;
-    pub_header->recvline = malloc(n * sizeof(unsigned char));
-    memcpy(pub_header->recvline, recvline, n);
+    pub_header->recvline_len = 2 + remaning_length;
+    pub_header->recvline = malloc(pub_header->recvline_len * sizeof(uchar));
+    memcpy(pub_header->recvline, recvline, pub_header->recvline_len);
+
+    fprintf(stdout, "encoded_str: ");
+    print_in_hex(pub_header->recvline, pub_header->recvline_len);
 
     return pub_header;
 }

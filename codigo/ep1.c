@@ -135,133 +135,108 @@ int main(int argc, char **argv) {
             while ((n = read(connfd, recvline, MAXLINE)) > 0) {
                 recvline[n] = 0;
 
-                printf("[Cliente conectado no processo filho %d enviou:] \n'",
-                       getpid());
-                fflush(stdout);
-                for (int i = 0; i < n; ++i)
-                    fprintf(stdout, "%02x ", recvline[i]);
-                fprintf(stdout, "'\n\n");
+                fprintf(stdout,
+                        "[Cliente conectado no processo filho %d enviou:] \n",
+                        getpid());
 
-                int index = 0;
+                print_in_hex(recvline, n);
+
                 FixedHeader *fixed_header;
-                fixed_header = interpret_fixed_header(recvline, &index);
+                fixed_header = interpret_fixed_header(recvline);
 
                 switch (fixed_header->type) {
                     case CONNECT_PACKAGE:
                         fprintf(stdout, "Connect case\n");
 
-                        ConnackVarHeader *connack_header =
-                            malloc(sizeof(ConnackVarHeader));
-                        connack_header->ack_flags = 0x00;
-                        connack_header->reason_code = 0x00;
-                        connack_header->topic_alias_maximum_value = 10;
-                        sprintf(connack_header->client_id, "%d", getpid());
-                        connack_header->client_id_len =
-                            strlen(connack_header->client_id);
-
                         int encoded_len;
-                        byte *encoded_str =
-                            encode_connack(connack_header, &encoded_len);
+                        byte *encoded_str = encode_connack(&encoded_len);
 
                         write(connfd, encoded_str, encoded_len);
-
                         break;
                     case CONNACK_PACKAGE:
                         fprintf(stdout, "Connack case\n");
+                        fprintf(stderr, "Server shouldn't receive a connack"
+                                        "package\n");
+                        exit(1);
                         break;
                     case PUBLISH_PACKAGE:
                         fprintf(stdout, "Publish case\n");
 
+                        /* Reading the publish package */
                         PublishHeader *pub_header;
                         pub_header = interpret_publish_header(
-                            recvline, &index, fixed_header->remaning_length, n);
+                            recvline, fixed_header->remaning_length, n);
 
-                        fprintf(stdout, "topic_len: %d\n",
-                                pub_header->topic_len);
-                        fprintf(stdout, "topic: %s\n", pub_header->topic_value);
-                        fprintf(stdout, "prop_len: %lu\n",
-                                pub_header->prop_len);
-                        fprintf(stdout, "msg_len: %lu\n", pub_header->msg_len);
-                        fprintf(stdout, "msg: %s\n", pub_header->msg);
-                        fprintf(stdout, "recvline: ");
-                        for (int i = 0; i < n; i++) {
-                            fprintf(stdout, "%02x ", pub_header->recvline[i]);
-                        }
-                        fprintf(stdout, "\n\n");
+                        /* Sending the message to every subscriptor of the
+                         * topic */
+                        int return_code = send_msg_to_topic(
+                            pub_header->recvline, pub_header->recvline_len,
+                            pub_header->topic_value);
 
-                        send_msg_to_topic(pub_header->recvline,
-                                          pub_header->recvline_len,
-                                          pub_header->topic_value);
+                        if (return_code == -1)
+                            fprintf(stderr, "Tópico não encontrado.\n");
 
-                        break;
-                    case PUBACK_PACKAGE:
-                        fprintf(stdout, "Pubback case\n");
-                        break;
-                    case PUBREC_PACKAGE:
-                        fprintf(stdout, "Pubrec case\n");
-                        break;
-                    case PUBREL_PACKAGE:
-                        fprintf(stdout, "Pubrel case\n");
-                        break;
-                    case PUBCOMP_PACKAGE:
-                        fprintf(stdout, "Pubcomp case\n");
+                        /* Deallocating the publish struct */
+                        free(pub_header->msg);
+                        free(pub_header->recvline);
+                        free(pub_header->topic_value);
+                        free(pub_header);
                         break;
                     case SUBSCRIBE_PACKAGE:
                         fprintf(stdout, "Subscribe case\n");
 
+                        /* Reading the subscribe package */
                         SubscribeHeader *sub_header;
                         sub_header = interpret_subscribe_header(
-                            recvline, &index, fixed_header->remaning_length);
+                            recvline, fixed_header->remaning_length);
 
+                        /* Adding the client to a topic */
                         int topic_idx;
                         topic_idx =
                             add_client_to_topic(sub_header->topic_value);
                         print_clients_in_topics();
 
                         if (topic_idx == -1) {
-                            // no space for new topic
-                            exit(1);
-                        }
+                            fprintf(stdout, "No space for new topic\n");
+                            /* Sending the suback package */
+                            byte suback_package[6] = { 0x90, 0x04, 0x00,
+                                                       0x01, 0x00, 0x97 };
+                            write(connfd, suback_package, 6);
+                        } else {
+                            /* Sending the suback package */
+                            byte suback_package[6] = { 0x90, 0x04, 0x00,
+                                                       0x01, 0x00, 0x00 };
+                            write(connfd, suback_package, 6);
 
-                        byte suback_package[6];
-                        suback_package[0] = 0x90;
-                        suback_package[1] = 0x04;
-                        suback_package[2] = 0x00;
-                        suback_package[3] = 0x01;
-                        suback_package[4] = 0x00;
-                        suback_package[5] = 0x00;
-
-                        write(connfd, suback_package, 6);
-
-                        while (1) {
-                            if (process_comusumed[getpid()] == 0) {
-                                // fprintf(stdout, "%s\n",
-                                // topic_msg[topic_idx]);
-                                write(connfd, topic_msg[topic_idx],
-                                      topic_len[topic_idx]);
-                                process_comusumed[getpid()] = 1;
+                            /* Creating a new process to check if any message
+                             * was sent to the topic */
+                            pid_t father_pid = getpid();
+                            if ((childpid = fork()) == 0) {
+                                while (1) {
+                                    if (process_comusumed[father_pid] == 0) {
+                                        write(connfd, topic_package[topic_idx],
+                                              topic_package_len[topic_idx]);
+                                        process_comusumed[father_pid] = 1;
+                                    }
+                                    usleep(100);
+                                }
                             }
-                            sleep(1);
                         }
 
-                        break;
-                    case SUBACK_PACKAGE:
-                        fprintf(stdout, "Suback case\n");
-                        break;
-                    case UNSUBSCRIBE_PACKAGE:
-                        fprintf(stdout, "Unsubscribe case\n");
-                        break;
-                    case UNSUBACK_PACKAGE:
-                        fprintf(stdout, "Unsuback case\n");
+                        /* Deallocating the subscribe struct */
+                        free(sub_header->topic_value);
+                        free(sub_header);
                         break;
                     case PINGREQ_PACKAGE:
                         fprintf(stdout, "Pingreq case\n");
-                        break;
-                    case PINGRESP_PACKAGE:
-                        fprintf(stdout, "Pingresp case\n");
+                        /* Hard coding the PINGRESP */
+                        byte response[2] = { 0xd0, 0x00 };
+                        write(connfd, response, 2);
+                        fprintf(stdout, "Sending pingresp...\n");
                         break;
                     case DISCONNECT_PACKAGE:
                         fprintf(stdout, "Disconnect case\n");
+                        remove_client_from_topic();
                         break;
                 }
 

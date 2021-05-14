@@ -12,110 +12,84 @@
 
 string *topic_names;
 
-int **topic_subscribers;
-int *topic_cur_subscribers;
+int **topic_subs;
+int *topic_num_subs;
 
-pthread_mutex_t *process_mutex;
-
-ustring *topic_msg;
-int *topic_len;
+ustring *topic_package;
+int *topic_package_len;
 
 int *process_comusumed;
 
+int client_topic;
+
 void inicialize_topics() {
-    topic_names =
-        mmap(NULL, MAX_TOPICS * sizeof(string), PROT_READ | PROT_WRITE,
-             MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+    topic_names = global_malloc(MAX_TOPICS * sizeof(string));
 
-    topic_cur_subscribers =
-        mmap(NULL, MAX_TOPICS * sizeof(int), PROT_READ | PROT_WRITE,
-             MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+    topic_subs = global_malloc(MAX_TOPICS * sizeof(int *));
+    topic_num_subs = global_malloc(MAX_TOPICS * sizeof(int));
 
-    topic_subscribers =
-        mmap(NULL, MAX_TOPICS * sizeof(int *), PROT_READ | PROT_WRITE,
-             MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+    topic_package = global_malloc(MAX_TOPICS * sizeof(ustring *));
+    topic_package_len = global_malloc(MAX_TOPICS * sizeof(int));
 
-    topic_msg = mmap(NULL, MAX_TOPICS * sizeof(string), PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-
-    topic_len = mmap(NULL, MAX_TOPICS * sizeof(int), PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-
-    process_mutex =
-        mmap(NULL, MAX_CLIENTS * sizeof(pthread_mutex_t),
-             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-
-    process_comusumed =
-        mmap(NULL, MAX_CLIENTS * sizeof(int), PROT_READ | PROT_WRITE,
-             MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+    process_comusumed = global_malloc(MAX_CLIENTS * sizeof(int));
 
     for (int i = 0; i < MAX_TOPICS; ++i) {
-        topic_names[i] =
-            mmap(NULL, MAX_TOPIC_NAME_LEN * sizeof(char),
-                 PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-        topic_names[i][0] = 0;
+        topic_names[i] = global_malloc(MAX_TOPIC_NAME_LEN * sizeof(char));
+        topic_names[i][0] = 0; /* empty topic */
 
-        topic_subscribers[i] =
-            mmap(NULL, MAX_TOPIC_NAME_LEN * sizeof(int), PROT_READ | PROT_WRITE,
-                 MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        topic_subs[i] = global_malloc(MAX_CLIENTS * sizeof(int));
 
-        topic_msg[i] =
-            mmap(NULL, MAX_MSG_LEN * sizeof(char), PROT_READ | PROT_WRITE,
-                 MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-        topic_msg[i][0] = 0;
+        topic_package[i] = global_malloc(MAX_MSG_LEN * sizeof(uchar));
+        topic_package[i][0] = 0;
 
-        topic_cur_subscribers[i] = 0;
+        topic_num_subs[i] = 0;
     }
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        pthread_mutex_init(&process_mutex[i], NULL);
-        pthread_mutex_lock(&process_mutex[i]);
         process_comusumed[i] = 1;
+
+        for (int j = 0; j < MAX_TOPICS; j++) topic_subs[j][i] = -1;
     }
+
+    client_topic = -1;
+
     fprintf(stdout, "Iniciando topicos\n");
 }
 
 void free_topics() {
-    int err;
     for (int i = 0; i < MAX_TOPICS; ++i) {
-        err = munmap(topic_names[i], MAX_TOPIC_NAME_LEN * sizeof(char));
-
-        if (err != 0)
-            fprintf(
-                stderr,
-                "Um erro ocorreu ao tentar desalocar o mmap topic_names[%d].\n",
-                i);
-
-        err = munmap(topic_subscribers[i], MAX_TOPIC_NAME_LEN * sizeof(int));
-
-        if (err != 0)
-            fprintf(stderr,
-                    "Um erro ocorreu ao tentar desalocar o mmap "
-                    "topic_subscribers[%d].\n",
-                    i);
+        global_free(topic_names[i], MAX_TOPIC_NAME_LEN * sizeof(char));
+        global_free(topic_subs[i], MAX_CLIENTS * sizeof(int));
+        global_free(topic_package[i], MAX_MSG_LEN * sizeof(uchar));
     }
 
-    err = munmap(topic_names, MAX_TOPICS * sizeof(string));
-    if (err != 0)
-        fprintf(stderr,
-                "Um erro ocorreu, ao tentar desalocar o mmap topic_names.\n");
+    global_free(topic_names, MAX_TOPICS * sizeof(string));
+    global_free(topic_subs, MAX_TOPICS * sizeof(int *));
+    global_free(topic_num_subs, MAX_TOPICS * sizeof(int));
+    global_free(topic_package, MAX_TOPICS * sizeof(ustring *));
+    global_free(topic_package_len, MAX_TOPICS * sizeof(int));
+    global_free(process_comusumed, MAX_CLIENTS * sizeof(int));
 }
 
 /* returns the topic index in the topic_names array or -1 if it's not present in
  * it */
 int find_topic(string topic_name) {
-    for (int i = 0; i < MAX_TOPICS && topic_names[i][0] != 0; ++i)
+    for (int i = 0; i < MAX_TOPICS; ++i) {
+        if (topic_names[i][0] == 0) continue;
         if (strcmp(topic_name, topic_names[i]) == 0) return i;
+    }
 
     return -1;
 }
 
 int add_topic(string topic_name) {
     int i;
+    /* Search for a please to add the topic */
     for (i = 0; i < MAX_TOPICS && topic_names[i][0] != 0; ++i)
         ;
 
-    if (i == MAX_TOPICS) return -1; /* return -1 if topic_names is full */
+    /* return -1 if topic_names is full */
+    if (i == MAX_TOPICS) return -1;
 
     fprintf(stdout, "Adicionando um novo tópico\n");
 
@@ -124,15 +98,47 @@ int add_topic(string topic_name) {
     return i;
 }
 
+void remove_topic(int topic_idx) {
+    topic_names[topic_idx][0] = 0; // just mark it as an empty topic
+}
+
 int add_client_to_topic(string topic_name) {
+    pid_t pid = getpid();
     int topic_idx = find_topic(topic_name);
+
+    if (pid > MAX_CLIENTS) {
+        fprintf(stderr, "HUGE ERROR: pid (%d) can't be greater than %d.\n", pid,
+                MAX_CLIENTS);
+        exit(1);
+    }
+
     if (topic_idx == -1) {
         if ((topic_idx = add_topic(topic_name)) == -1)
             return -1; /* Maximum number of topics exceeded */
     }
 
-    topic_subscribers[topic_idx][topic_cur_subscribers[topic_idx]++] = getpid();
+    fprintf(stdout, "Client_topic = %d\n", topic_idx);
+    client_topic = topic_idx;
+
+    topic_subs[topic_idx][pid] = pid;
+    topic_num_subs[topic_idx]++;
     return topic_idx;
+}
+
+void remove_client_from_topic() {
+    if (client_topic == -1) return;
+
+    int topic_idx = client_topic;
+
+    fprintf(stdout, "Removendo cliente %d do tópico %s.\n", getpid(),
+            topic_names[topic_idx]);
+
+    client_topic = -1;
+
+    topic_subs[topic_idx][getpid()] = -1;
+    topic_num_subs[topic_idx]--;
+
+    if (topic_num_subs[topic_idx] == 0) { remove_topic(topic_idx); }
 }
 
 int send_msg_to_topic(ustring msg, int msg_len, string topic_name) {
@@ -141,39 +147,44 @@ int send_msg_to_topic(ustring msg, int msg_len, string topic_name) {
 
     if (topic_idx == -1) return -1;
 
-    memcpy(topic_msg[topic_idx], msg, msg_len);
-    topic_len[topic_idx] = msg_len;
+    memcpy(topic_package[topic_idx], msg, msg_len);
+    topic_package_len[topic_idx] = msg_len;
 
-    for (int i = 0; i < topic_cur_subscribers[topic_idx]; i++) {
-        pid = topic_subscribers[topic_idx][i];
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        pid = topic_subs[topic_idx][i];
+        if (pid == -1) continue;
         process_comusumed[pid] = 0;
     }
 
     return 0;
 }
 
-void send_msg_to_client(ustring msg, int msg_len, int pid) {
-    pthread_mutex_unlock(&process_mutex[pid]);
-    pthread_mutex_lock(&process_mutex[pid]);
-}
-
 void print_topics() {
     fprintf(stdout, "Current topics:\n");
-    for (int i = 0; i < MAX_TOPICS && topic_names[i][0] != 0; ++i) {
-        fprintf(stdout, "Topic[%d] :", i);
-        fflush(stdout);
-        fprintf(stdout, " '%s'\n", topic_names[i]);
+
+    for (int i = 0; i < MAX_TOPICS; ++i) {
+        if (topic_names[i][0] == 0) continue;
+
+        fprintf(stdout, "Topic[%d] : %s\n", i, topic_names[i]);
     }
+
     fprintf(stdout, "\n");
 }
 
 void print_clients_in_topics() {
     fprintf(stdout, "Current clients:\n");
-    for (int i = 0; i < MAX_TOPICS && topic_names[i][0] != 0; ++i) {
-        fprintf(stdout, "Topic '%s':\n", topic_names[i]);
-        for (int j = 0; j < topic_cur_subscribers[i]; j++) {
-            fprintf(stdout, "\t%d\n", topic_subscribers[i][j]);
+
+    for (int i = 0; i < MAX_TOPICS; ++i) {
+        if (topic_names[i][0] == 0) continue;
+
+        fprintf(stdout, "Topic[%d] - %s:\n", i, topic_names[i]);
+
+        for (int j = 0; j < MAX_CLIENTS; j++) {
+            if (topic_subs[i][j] == -1) continue;
+
+            fprintf(stdout, "\t%d\n", topic_subs[i][j]);
         }
+
         fprintf(stdout, "\n");
     }
 

@@ -6,11 +6,12 @@
 #include <sys/types.h>
 
 typedef char *string;
-typedef unsigned char *ustring;
+typedef unsigned char uchar;
+typedef uchar *ustring;
 typedef u_int8_t byte;
-typedef u_int64_t var_byte;
 
-u_int64_t read_var_byte_integer(ustring buffer, int *start_idx);
-byte *write_var_byte_integer(u_int64_t value, u_int16_t *len);
+void print_in_hex(ustring s, int len);
+void *global_malloc(size_t size);
+void global_free(void *addr, size_t size);
 
 #endif /* ifndef UTIL_H */

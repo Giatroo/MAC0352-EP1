@@ -9,33 +9,31 @@
 
 #include "util.h"
 
-// extern string topic_names[MAX_TOPICS];
-// extern int topic_subscribers[MAX_TOPICS][MAX_SUBSCRIBERS];
-// extern int topic_cur_subscribers[MAX_TOPICS];
 extern string *topic_names;
-extern int **topic_subscribers;
-extern int *topic_cur_subscribers;
 
-extern pthread_mutex_t *process_mutex;
+extern int **topic_subs;
+extern int *topic_num_subs;
 
-extern ustring *topic_msg;
-extern int *topic_len;
+extern ustring *topic_package;
+extern int *topic_package_len;
 
 extern int *process_comusumed;
 
+extern int client_topic;
+
 void inicialize_topics();
 void free_topics();
+
 int find_topic(string topic_name);
+
 int add_topic(string topic_name);
+void remove_topic(int topic_idx);
 int add_client_to_topic(string topic_name);
+void remove_client_from_topic();
 
 int send_msg_to_topic(ustring msg, int msg_len, string topic_name);
-void send_msg_to_client(ustring msg, int msg_len, int pid);
 
 void print_topics();
 void print_clients_in_topics();
-
-void publish_msg(string topic_name, string msg);
-string get_msg(string topic_name);
 
 #endif /* ifndef TOPICS_H */

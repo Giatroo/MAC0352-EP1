@@ -1,44 +1,34 @@
 #include "util.h"
 
+#include <errno.h>
 #include <stdio.h>
+#include <sys/mman.h>
 
-u_int64_t read_var_byte_integer(ustring buffer, int *start_idx) {
-    u_int64_t multiplier = 1;
-    u_int64_t value = 0;
-    u_int8_t encoded_byte;
-    do {
-        encoded_byte = buffer[(*start_idx)++];
-        value += (encoded_byte & 127) * multiplier;
-        multiplier *= 128;
-    } while ((encoded_byte & 128) != 0);
-
-    return value;
+void print_in_hex(ustring s, int len) {
+    fprintf(stdout, "'");
+    for (int i = 0; i < len; ++i) fprintf(stdout, "%02x ", s[i]);
+    fprintf(stdout, "'\n\n");
 }
 
-byte *write_var_byte_integer(u_int64_t value, u_int16_t *i) {
-    /* fprintf(stdout, "\nEntering write var byte integer\n"); */
-    u_int8_t encoded_byte;
-    *i = 0;
-    byte output[4];
-
-    /* fprintf(stdout, "value: %ld\n", value); */
-
-    do {
-        encoded_byte = value % 128U;
-        /* fprintf(stdout, "Encoding: %d\n", encoded_byte); */
-        value /= 128U;
-        /* fprintf(stdout, "value: %ld\n", value); */
-        if (value > 0) encoded_byte = encoded_byte | 128U;
-        output[(*i)++] = (unsigned char) encoded_byte;
-        /* fprintf(stdout, "Encoding: %d\n", encoded_byte); */
-        /* fprintf(stdout, "output: %02x\n\n", output[*i - 1]); */
-    } while (value > 0);
-
-    /* fprintf(stdout, "i=%d\n", *i); */
-    byte *ret = malloc(*i * sizeof(byte));
-    for (int j = 0; j < *i; j++) {
-        ret[j] = output[j];
-        /* fprintf(stdout, "ret[%d] = %02x\n", j, ret[j]); */
+void *global_malloc(size_t size) {
+    void *allocated_bytes = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                                 MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+    if (allocated_bytes == MAP_FAILED) {
+        fprintf(stderr,
+                "Failed to allocate the bytes with mmap.\nErrno = "
+                "%d.\nExiting...\n",
+                errno);
+        exit(errno);
     }
-    return ret;
+
+    return allocated_bytes;
+}
+
+void global_free(void *addr, size_t size) {
+    int err = munmap(addr, size);
+
+    if (err != 0) {
+        fprintf(stderr, "Um erro ocorreu ao tentar desalocar um mmap\n");
+        exit(errno);
+    }
 }
