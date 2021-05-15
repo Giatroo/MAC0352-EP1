@@ -22,7 +22,7 @@ tar:
 	cp ../slides/slides.pdf ../$(DIRNAME)/slides.pdf
 
 	# copia o codigo fonte
-	for a in *.cpp; do \
+	for a in *.c; do \
 		cp $$a ../$(DIRNAME)/$$a; \
 	done
 
