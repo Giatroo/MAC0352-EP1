@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
 
     if (argc != 2) {
         fprintf(stderr, "Uso: %s <Porta>\n", argv[0]);
-        fprintf(stderr, "Vai rodar um servidor de echo na porta <Porta> TCP\n");
+        fprintf(stderr, "Vai rodar um servidor MQTT na porta <Porta> TCP\n");
         exit(1);
     }
 
