@@ -73,6 +73,22 @@
     \section{Testes}
     \begin{frame}[t]
       \frametitle{Testes}
+      \framesubtitle{Detalhes dos Testes}
+      \begin{itemize}
+        \item Os testes foram realizados com o uso de uma máquina virtual com
+          quatro núcleos de CPU dedicados e 8G de memória RAM, e uma máquina
+          host de oito núcleos de CPU e 16G de memória RAM;
+        \item A comunicação foi feita utilizando uma rede local de 100 Mbps;
+        \item Para medir a carga de rede, utilizou-se o \texttt{Wireshark} com
+          um filtro de pacotes MQTT. Como nenhuma máquina na rede local faz uso
+          desse tipo de pacote, temos uma estimativa de quanto de rede se está
+          gastando.
+      \end{itemize}
+
+    \end{frame}
+
+    \begin{frame}[t]
+      \frametitle{Testes}
       \framesubtitle{Apenas o servidor}
       \begin{itemize}
         \item Quando apenas o servidor está em operação, sem nenhum cliente
